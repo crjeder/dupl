@@ -1,11 +1,11 @@
 mod crawl;
-mod dedup;
+mod dupl;
 
 use clap::Parser;
 use std::path::PathBuf;
 
 #[derive(Parser)]
-#[command(name = "dedup", about = "Find duplicate files in a photo collection")]
+#[command(name = "dupl", about = "Find duplicate files in a photo collection")]
 struct Cli {
     /// Directories to scan
     #[arg(required = true)]
@@ -46,7 +46,7 @@ fn main() {
     let mut wasted_bytes: u64 = 0;
 
     for (size, alias_groups) in &size_groups {
-        for content_group in dedup::find_duplicates(alias_groups.clone(), cli.block_size) {
+        for content_group in dupl::find_duplicates(alias_groups.clone(), cli.block_size) {
             println!("# {} bytes", size);
             for alias_group in &content_group {
                 println!("  {}", alias_group.representative().display());
