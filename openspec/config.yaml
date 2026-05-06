@@ -1,0 +1,20 @@
+schema: spec-driven
+
+context: |
+  Tech stack: Rust, clap (CLI), walkdir (directory traversal)
+  Domain: exact-duplicate file detection for photo collections
+
+  Core design invariant: NO hashes are computed anywhere. Files are compared
+  directly, block by block (64 KiB). This is intentional — pre-computed hashes
+  are invalidated by copy/move/rename, which is how most photo duplicates arise.
+
+  Pipeline: crawl.rs → dedup.rs → main.rs (output)
+    - crawl.rs  : walks directories, groups files by byte size, drops singletons
+    - dedup.rs  : recursively splits size groups by block content until EOF match
+    - main.rs   : CLI (clap derive), drives the pipeline, formats output
+
+  Output contract: stdout is machine-readable (parseable); stderr is human-readable
+  progress and warnings only.
+
+  Status: actively developed (WIP). Specs describe currently implemented behaviour.
+  Known gaps (not yet specced): hardlink/inode deduplication, keep-file ordering.
