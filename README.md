@@ -1,5 +1,5 @@
 <picture>
-    <img alt="dupl wipe" src="./assets/dupl-logo.png">
+    <img alt="dupl wipe" src="dupl-logo.png" width="320" height="192">
 </picture>
 
 
