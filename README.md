@@ -131,10 +131,6 @@ crawl.rs  →  dupl.rs  →  main.rs (output)
 This project uses [Semantic Versioning](http://semver.org/). For available versions, see
 the [CHANGELOG](CHANGELOG.md).
 
-## Authors
-
-- **Christoph Jeder** — [crjeder](https://github.com/crjeder)
-
 ## License
 
 This project is licensed under the MIT License — see the [LICENSE](LICENSE) file for details.
