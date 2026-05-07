@@ -66,17 +66,42 @@ class FileEntry:
     dev: int
 
 
-def walk(roots: list[str], min_size: int = 1) -> list[FileEntry]:
+IMAGE_EXTENSIONS = frozenset(
+    {".jpg", ".jpeg", ".png", ".gif", ".bmp", ".tiff", ".tif", ".webp", ".heic", ".heif", ".avif"}
+)
+
+
+@dataclass
+class WalkResult:
+    entries: list[FileEntry]
+    unreadable_files: int
+    unreadable_dirs: int
+
+
+def _onerror(exc: OSError, unreadable_dirs: list[int]) -> None:
+    unreadable_dirs[0] += 1
+
+
+def walk(roots: list[str], min_size: int = 1) -> WalkResult:
     seen: set[tuple[int, int]] = set()  # (dev, inode) — collapse hard links
     entries: list[FileEntry] = []
+    unreadable_files = 0
+    unreadable_dirs_count = [0]  # mutable container for closure
 
     for root in roots:
-        for dirpath, _, filenames in os.walk(root, followlinks=False):
+        for dirpath, _, filenames in os.walk(
+            root,
+            followlinks=False,
+            onerror=lambda exc: _onerror(exc, unreadable_dirs_count),
+        ):
             for name in filenames:
+                if os.path.splitext(name)[1].lower() not in IMAGE_EXTENSIONS:
+                    continue
                 path = os.path.join(dirpath, name)
                 try:
                     st = os.stat(path, follow_symlinks=False)
                 except OSError:
+                    unreadable_files += 1
                     continue
                 if not os.path.isfile(path):
                     continue
@@ -88,7 +113,7 @@ def walk(roots: list[str], min_size: int = 1) -> list[FileEntry]:
                 seen.add(key)
                 entries.append(FileEntry(st.st_size, st.st_ino, st.st_dev))
 
-    return entries
+    return WalkResult(entries, unreadable_files, unreadable_dirs_count[0])
 
 
 # ── Histogram helpers ─────────────────────────────────────────────────────────
@@ -127,7 +152,12 @@ def bar(value: float, max_value: float, width: int = 40) -> str:
 # ── Report sections ───────────────────────────────────────────────────────────
 
 
-def report_overview(entries: list[FileEntry], dev_to_fs: dict[int, str]) -> None:
+def report_overview(
+    entries: list[FileEntry],
+    dev_to_fs: dict[int, str],
+    unreadable_files: int,
+    unreadable_dirs: int,
+) -> None:
     total_bytes = sum(e.size for e in entries)
     devs: defaultdict[int, int] = defaultdict(int)
     for e in entries:
@@ -139,6 +169,8 @@ def report_overview(entries: list[FileEntry], dev_to_fs: dict[int, str]) -> None
     print(f"  Total files (unique inodes) : {len(entries):>12,}")
     print(f"  Total data                  : {total_bytes / (1 << 30):>11.1f} GB")
     print(f"  Distinct devices            : {len(devs):>12,}")
+    print(f"  Unreadable files            : {unreadable_files:>12,}")
+    print(f"  Unreadable directories      : {unreadable_dirs:>12,}")
     print()
     for dev, count in sorted(devs.items(), key=lambda x: -x[1]):
         fs = dev_to_fs.get(dev, "unknown")
@@ -323,11 +355,18 @@ def main() -> None:
 
     print(f"Scanning {len(roots)} root(s)…", file=sys.stderr)
     dev_to_fs = load_mounts()
-    entries = walk(roots)
+    result = walk(roots)
+    entries = result.entries
     print(f"Found {len(entries):,} unique files.", file=sys.stderr)
+    if result.unreadable_files or result.unreadable_dirs:
+        print(
+            f"Skipped {result.unreadable_files:,} unreadable file(s), "
+            f"{result.unreadable_dirs:,} unreadable director(ies).",
+            file=sys.stderr,
+        )
     print()
 
-    report_overview(entries, dev_to_fs)
+    report_overview(entries, dev_to_fs, result.unreadable_files, result.unreadable_dirs)
     report_size_distribution(entries)
     groups = report_size_groups(entries)
     report_inode_locality(groups)
