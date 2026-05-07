@@ -15,7 +15,7 @@ EXIF metadata.
 
 ### Prerequisites
 
-- [Rust toolchain](https://rustup.rs/) (edition 2021, stable)
+- [Rust toolchain](https://rustup.rs/) (edition 2024, stable ≥ 1.85)
 
 ### Installing
 
