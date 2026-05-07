@@ -9,11 +9,15 @@ pub type FileId = (u64, u64);
 #[derive(Debug, Clone)]
 pub struct AliasGroup {
     pub paths: Vec<PathBuf>,
+    /// Inode number of this file, if available. Used to sort read order for
+    /// disk locality — sequential inode reads approximate sequential sector reads
+    /// on extent-based filesystems (ext4, XFS, btrfs).
+    pub inode: Option<u64>,
 }
 
 impl AliasGroup {
-    fn new(path: PathBuf) -> Self {
-        AliasGroup { paths: vec![path] }
+    fn new(path: PathBuf, inode: Option<u64>) -> Self {
+        AliasGroup { paths: vec![path], inode }
     }
 
     /// The path used to open a file handle; all aliases read the same bytes.
@@ -174,12 +178,12 @@ pub fn crawl(
                     } else {
                         let groups = by_size.entry(size).or_default();
                         inode_index.insert(key, groups.len());
-                        groups.push(AliasGroup::new(path_buf));
+                        groups.push(AliasGroup::new(path_buf, Some(id.1)));
                     }
                 }
                 None => {
                     // No inode info — treat as unique (conservative).
-                    by_size.entry(size).or_default().push(AliasGroup::new(path_buf));
+                    by_size.entry(size).or_default().push(AliasGroup::new(path_buf, None));
                 }
             }
         }
@@ -187,6 +191,13 @@ pub fn crawl(
 
     // Discard size groups with fewer than two distinct inodes.
     by_size.retain(|_, groups| groups.len() > 1);
+
+    // Sort each group by inode so block reads approximate physical disk order.
+    // Groups without inode info (Windows) are left in insertion order.
+    for groups in by_size.values_mut() {
+        groups.sort_unstable_by_key(|g| g.inode);
+    }
+
     by_size
 }
 
