@@ -13,17 +13,18 @@ Usage:
     python stats.py /path/to/photos [/path/to/more ...]
 """
 
+from __future__ import annotations
+
 import os
 import sys
 import math
 import statistics
 from collections import defaultdict
-from dataclasses import dataclass, field
-from pathlib import Path
-from typing import Optional
+from dataclasses import dataclass
 
 
 # ── Filesystem detection ──────────────────────────────────────────────────────
+
 
 def load_mounts() -> dict[int, str]:
     """Return {device_id: filesystem_type} from /proc/mounts."""
@@ -57,6 +58,7 @@ def statvfs_block_size(path: str) -> int:
 
 # ── Data collection ───────────────────────────────────────────────────────────
 
+
 @dataclass
 class FileEntry:
     size: int
@@ -65,7 +67,7 @@ class FileEntry:
 
 
 def walk(roots: list[str], min_size: int = 1) -> list[FileEntry]:
-    seen: set[tuple[int, int]] = set()   # (dev, inode) — collapse hard links
+    seen: set[tuple[int, int]] = set()  # (dev, inode) — collapse hard links
     entries: list[FileEntry] = []
 
     for root in roots:
@@ -91,18 +93,21 @@ def walk(roots: list[str], min_size: int = 1) -> list[FileEntry]:
 
 # ── Histogram helpers ─────────────────────────────────────────────────────────
 
+
 def log2_bucket(n: int) -> str:
     if n == 0:
         return "0"
     exp = int(math.log2(n))
-    lo = 2 ** exp
-    hi = 2 ** (exp + 1)
+    lo: int = 1 << exp
+    hi: int = 1 << (exp + 1)
     units = [(1 << 30, "GB"), (1 << 20, "MB"), (1 << 10, "KB")]
+
     def fmt(v: int) -> str:
         for div, label in units:
             if v >= div:
                 return f"{v // div}{label}"
         return f"{v}B"
+
     return f"{fmt(lo)}–{fmt(hi)}"
 
 
@@ -121,9 +126,10 @@ def bar(value: float, max_value: float, width: int = 40) -> str:
 
 # ── Report sections ───────────────────────────────────────────────────────────
 
+
 def report_overview(entries: list[FileEntry], dev_to_fs: dict[int, str]) -> None:
     total_bytes = sum(e.size for e in entries)
-    devs = defaultdict(int)
+    devs: defaultdict[int, int] = defaultdict(int)
     for e in entries:
         devs[e.dev] += 1
 
@@ -153,7 +159,7 @@ def report_size_distribution(entries: list[FileEntry]) -> None:
     max_count = max(buckets.values(), default=1)
     for exp in sorted(buckets):
         count = buckets[exp]
-        label = log2_bucket(2 ** exp)
+        label = log2_bucket(1 << exp)
         print(f"  {label:>12}  {bar(count, max_count, 35)}  {count:,}")
     print()
 
@@ -165,9 +171,7 @@ def report_size_groups(entries: list[FileEntry]) -> list[list[FileEntry]]:
 
     groups = [g for g in by_size.values() if len(g) >= 2]
     singletons = sum(1 for g in by_size.values() if len(g) == 1)
-    total_dup_bytes = sum(
-        (len(g) - 1) * g[0].size for g in groups
-    )
+    total_dup_bytes = sum((len(g) - 1) * g[0].size for g in groups)
 
     group_sizes = sorted(len(g) for g in groups)
 
@@ -178,8 +182,12 @@ def report_size_groups(entries: list[FileEntry]) -> list[list[FileEntry]]:
     print(f"  Sizes with ≥2 files                 : {len(groups):,}")
     if groups:
         print(f"  Max files in one size group         : {max(group_sizes):,}")
-        print(f"  Median group size                   : {statistics.median(group_sizes):.1f}")
-        print(f"  Upper-estimate duplicate data       : {total_dup_bytes / (1 << 30):.1f} GB")
+        print(
+            f"  Median group size                   : {statistics.median(group_sizes):.1f}"
+        )
+        print(
+            f"  Upper-estimate duplicate data       : {total_dup_bytes / (1 << 30):.1f} GB"
+        )
         print()
         print("  Group size distribution:")
         size_buckets: dict[str, int] = defaultdict(int)
@@ -228,16 +236,19 @@ def report_inode_locality(groups: list[list[FileEntry]]) -> None:
     print()
 
     # Classify groups by locality quality
-    p50 = percentile(spans, 50)
-    excellent  = sum(1 for s in spans if s < 1_000)
-    good       = sum(1 for s in spans if 1_000 <= s < 100_000)
-    fair       = sum(1 for s in spans if 100_000 <= s < 10_000_000)
-    poor       = sum(1 for s in spans if s >= 10_000_000)
-    total      = len(spans)
+    excellent = sum(1 for s in spans if s < 1_000)
+    good = sum(1 for s in spans if 1_000 <= s < 100_000)
+    fair = sum(1 for s in spans if 100_000 <= s < 10_000_000)
+    poor = sum(1 for s in spans if s >= 10_000_000)
+    total = len(spans)
 
     print("  Locality quality (inode span thresholds):")
-    for label, count in [("excellent (<1K)", excellent), ("good (1K–100K)", good),
-                          ("fair (100K–10M)", fair), ("poor (≥10M)", poor)]:
+    for label, count in [
+        ("excellent (<1K)", excellent),
+        ("good (1K–100K)", good),
+        ("fair (100K–10M)", fair),
+        ("poor (≥10M)", poor),
+    ]:
         pct = 100 * count / total if total else 0
         print(f"    {label:<22}  {bar(pct, 100, 30)}  {pct:5.1f}%  ({count:,})")
     print()
@@ -249,31 +260,55 @@ def report_inode_locality(groups: list[list[FileEntry]]) -> None:
         hist[bucket] += 1
     max_h = max(hist.values(), default=1)
     for exp in sorted(hist):
-        lo, hi = 2**exp, 2**(exp+1)
+        lo: int = 1 << exp
+        hi: int = 1 << (exp + 1)
         print(f"    {lo:>12,}–{hi:<12,}  {bar(hist[exp], max_h, 28)}  {hist[exp]:,}")
     print()
 
 
-def report_block_size_hint(entries: list[FileEntry], groups: list[list[FileEntry]], roots: list[str]) -> None:
+def report_block_size_hint(groups: list[list[FileEntry]], roots: list[str]) -> None:
     fs_block = statvfs_block_size(roots[0])
-    sizes = sorted(set(g[0].size for g in groups))
 
     print("=" * 60)
     print("BLOCK SIZE HINTS")
     print("=" * 60)
     print(f"  Filesystem block size (first root) : {fs_block:,} bytes")
-    print(f"  Default dupl block_size            : 65,536 bytes")
+    print("  Default dupl block_size            : 65,536 bytes")
     print()
-    if sizes:
-        smallest_dup = min(sizes)
-        print(f"  Smallest same-size group file      : {smallest_dup:,} bytes")
-        if smallest_dup < 65536:
-            print(f"  ⚠  Some files are smaller than the default block size.")
-            print(f"     Consider --block-size {smallest_dup} for those groups.")
+
+    # Count files per size range to show where tiny files cluster
+    BLOCK_SIZE = 65536
+    tiny: list[list[FileEntry]] = [g for g in groups if g[0].size < BLOCK_SIZE]
+    large: list[list[FileEntry]] = [g for g in groups if g[0].size >= BLOCK_SIZE]
+    tiny_files = sum(len(g) for g in tiny)
+    large_files = sum(len(g) for g in large)
+
+    print(
+        f"  Size groups with files < block_size : {len(tiny):,}  ({tiny_files:,} files)"
+    )
+    print(
+        f"  Size groups with files ≥ block_size : {len(large):,}  ({large_files:,} files)"
+    )
+    print()
+
+    # Warn about spikes — size buckets with suspiciously many files
+    by_exp: dict[int, int] = defaultdict(int)
+    for g in groups:
+        exp = int(math.log2(max(1, g[0].size)))
+        by_exp[exp] += len(g)
+    total_grouped = sum(by_exp.values())
+    print("  Dominant size ranges in duplicate candidates:")
+    for exp in sorted(by_exp, key=lambda e: -by_exp[e])[:5]:
+        count = by_exp[exp]
+        label = log2_bucket(1 << exp)
+        pct = 100 * count / total_grouped if total_grouped else 0
+        flag = "  ← possible metadata/thumbnail noise" if 2**exp < 4096 else ""
+        print(f"    {label:>12}  {count:>8,} files  ({pct:4.1f}%){flag}")
     print()
 
 
 # ── Main ──────────────────────────────────────────────────────────────────────
+
 
 def main() -> None:
     if len(sys.argv) < 2:
@@ -296,7 +331,7 @@ def main() -> None:
     report_size_distribution(entries)
     groups = report_size_groups(entries)
     report_inode_locality(groups)
-    report_block_size_hint(entries, groups, roots)
+    report_block_size_hint(groups, roots)
 
 
 if __name__ == "__main__":
