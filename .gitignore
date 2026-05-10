@@ -17,6 +17,7 @@ target
 
 # Claude Code
 /.claude/
+/.claire/
 
 # CocoIndex Code (ccc)
 /.cocoindex_code/
